@@ -214,13 +214,38 @@ nav.tabs button.on{color:var(--ink);background:var(--paper)}
 /* ===== Penghubung ke server Apps Script (pengganti google.script.run) ===== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbxhCFSNzJx2c4y6JRQxF-8z2V3oKWAed7E05c6gyM5h6ERK2j8DeyloWjmZRqBJ8g2A/exec';
 (function(){
+  var BACA = {meta:1, report:1, riwayatAset:1};
+  function teks(h){ return String(h||'').replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); }
+  function sebab(status, isi){
+    var t = teks(isi);
+    if (/maximum execution time|waktu eksekusi maksimum/i.test(t)) return 'Server terlalu lama memproses (lebih dari 6 menit).';
+    if (/authoriz|otorisasi|izin/i.test(t)) return 'Skrip perlu izin ulang: buka Apps Script, jalankan setupAwal sekali, lalu terbitkan Versi baru.';
+    if (/not found|tidak ditemukan|404/i.test(t) || status === 404) return 'Alamat server tidak ditemukan. Pastikan memakai Kelola deployment \u2192 Versi baru, bukan Deployment baru.';
+    if (/quota|kuota|too many/i.test(t)) return 'Kuota harian Google habis. Coba lagi besok atau beberapa jam lagi.';
+    return 'Server menjawab ' + (status || '?') + (t ? ': ' + t.slice(0, 140) : '');
+  }
   function runner(){
     var ok=function(){}, ko=function(){};
     function kirim(body){
-      fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),redirect:'follow'})
-        .then(function(r){ if(!r.ok) throw new Error('server '+r.status); return r.json(); })
-        .then(function(d){ ok(d); })
-        .catch(function(e){ ko(new Error('Tidak bisa terhubung ke server. Periksa internet lalu coba lagi.')); });
+      var aksi = body.fn === 'api' ? body.action : 'login', ctrl = window.AbortController ? new AbortController() : null;
+      var batas = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 90000);
+      var tulis = !BACA[aksi] && aksi !== 'login';
+      if (tulis) body.rid = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);   // nomor unik: cegah simpan ganda
+      function gagal(m){
+        clearTimeout(batas);
+        if (tulis) m += ' Catatan mungkin sudah tersimpan, jadi data dimuat ulang dulu; periksa sebelum mencoba lagi.';
+        setTimeout(function(){ ko(new Error(m)); if (tulis && window.reloadAll) try{ reloadAll(); }catch(e){} }, 0);
+      }
+      fetch(API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(body), redirect:'follow', signal: ctrl ? ctrl.signal : undefined})
+        .then(function(r){ return r.text().then(function(isi){ return {status:r.status, isi:isi}; }); })
+        .then(function(x){
+          var d; try { d = JSON.parse(x.isi); } catch(e) { return gagal(sebab(x.status, x.isi)); }
+          clearTimeout(batas); setTimeout(function(){ ok(d); }, 0);
+        })
+        .catch(function(e){
+          if (e && e.name === 'AbortError') return gagal('Server tidak menjawab dalam 90 detik.');
+          gagal(navigator.onLine === false ? 'HP sedang offline.' : 'Sambungan ke server terputus (' + (e && e.message || 'tanpa keterangan') + ').');
+        });
     }
     var r={withSuccessHandler:function(f){ok=f;return r;},withFailureHandler:function(f){ko=f;return r;},
       api:function(t,a,p){ kirim({fn:'api',token:t,action:a,payload:p}); },
@@ -425,7 +450,7 @@ function setSS(k,v){ try{ v==null?localStorage.removeItem(k):localStorage.setIte
 
 var busy=0;
 function load(on){ busy+=on?1:-1; $('loading').classList.toggle('hidden', busy<=0); }
-function toast(t){ var el=document.createElement('div'); el.className='toast'; el.textContent=t; el.setAttribute('role','status'); document.body.appendChild(el); setTimeout(function(){el.remove();},2600); }
+function toast(t){ var el=document.createElement('div'); el.className='toast'; el.textContent=t; el.setAttribute('role','status'); document.body.appendChild(el); setTimeout(function(){el.remove();},Math.max(2600,String(t).length*70)); }
 
 function call(action, payload){
   return new Promise(function(res, rej){
