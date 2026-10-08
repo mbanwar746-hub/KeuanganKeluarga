@@ -213,6 +213,27 @@ nav.tabs button.on{color:var(--ink);background:var(--paper)}
 <script>
 /* ===== Penghubung ke server Apps Script (pengganti google.script.run) ===== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbxhCFSNzJx2c4y6JRQxF-8z2V3oKWAed7E05c6gyM5h6ERK2j8DeyloWjmZRqBJ8g2A/exec';
+var VERSI_HALAMAN = '2026-10-08c';
+/* Perbarui diri: bila GitHub sudah punya versi lebih baru dari yang tersimpan di HP, muat ulang versi baru */
+(function(){
+  try {
+    fetch(location.pathname + '?cek=' + Date.now(), { cache: 'no-store' }).then(function(r){ return r.text(); }).then(function(h){
+      var m = h.match(/VERSI_HALAMAN = '([^']+)'/);
+      if (m && m[1] !== VERSI_HALAMAN) {
+        var k = 'upd_' + m[1];
+        try { if (sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch(e) {}
+        location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]));
+      }
+    }).catch(function(){});
+  } catch(e) {}
+  document.addEventListener('DOMContentLoaded', function(){
+    var box = document.querySelector('.login-box'); if (!box) return;
+    var p = document.createElement('p');
+    p.style.cssText = 'color:#7F8BA6;font-size:12px;margin-top:18px';
+    p.textContent = 'Versi ' + VERSI_HALAMAN + ' · server …' + API_URL.replace(/\/exec$/, '').slice(-6);
+    box.appendChild(p);
+  });
+})();
 (function(){
   var BACA = {meta:1, report:1, riwayatAset:1};
   function teks(h){ return String(h||'').replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); }
@@ -226,7 +247,7 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbxhCFSNzJx2c4y6JRQxF-8z2V
   }
   function runner(){
     var ok=function(){}, ko=function(){};
-    function kirim(body){
+    function kirim(body, ulang){
       var aksi = body.fn === 'api' ? body.action : 'login', ctrl = window.AbortController ? new AbortController() : null;
       var batas = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 90000);
       var tulis = !BACA[aksi] && aksi !== 'login';
@@ -244,7 +265,9 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbxhCFSNzJx2c4y6JRQxF-8z2V
         })
         .catch(function(e){
           if (e && e.name === 'AbortError') return gagal('Server tidak menjawab dalam 90 detik.');
-          gagal(navigator.onLine === false ? 'HP sedang offline.' : 'Sambungan ke server terputus (' + (e && e.message || 'tanpa keterangan') + ').');
+          // Data yang hanya dibaca aman dicoba ulang sekali (gangguan jaringan sesaat)
+          if (!ulang && !tulis && aksi !== 'login') { clearTimeout(batas); return setTimeout(function(){ kirim(body, true); }, 1500); }
+          gagal(navigator.onLine === false ? 'HP sedang offline.' : 'Sambungan ke server terputus (' + (e && e.message || 'tanpa keterangan') + ', server …' + API_URL.replace(/\/exec$/, '').slice(-6) + ').');
         });
     }
     var r={withSuccessHandler:function(f){ok=f;return r;},withFailureHandler:function(f){ko=f;return r;},
@@ -535,9 +558,12 @@ function reloadAll(){ return refresh(false); }
 
 function fillSelects(){
   var names=(META.orang||[]).slice(); var me=getLS('me');
+  // Nama tersimpan yang sudah tidak ada di data (mis. diganti lewat /nama) dibuang; minta pilih ulang
+  if(me && names.length && names.indexOf(me)<0 && me!==getLS('meBaru')){ setLS('me',''); me=''; setTimeout(function(){ toast('Pilih nama Anda di kolom "Saya" (pojok kanan atas).'); },400); }
   if(me && names.indexOf(me)<0) names.push(me);
-  $('me').innerHTML=names.map(function(n){return '<option>'+esc(n)+'</option>';}).join('')+'<option value="__new">+ Nama baru</option>';
-  if(me) $('me').value=me; else if(names.length) setLS('me',names[0]); else $('me').value='__new';
+  $('me').innerHTML=(me?'':'<option value="" selected>— pilih nama —</option>')+names.map(function(n){return '<option>'+esc(n)+'</option>';}).join('')+'<option value="__new">+ Nama baru</option>';
+  if(me) $('me').value=me; else if(!names.length) $('me').value='__new';
+  $('me').style.outline=me?'':'2px solid #F2C14E';
   $('fo').innerHTML='<option value="">Semua orang</option>'+(META.orang||[]).map(function(n){return '<option>'+esc(n)+'</option>';}).join('');
   var all=[].concat(META.kategori.Keluar, META.kategori.Masuk.filter(function(k){return k!=='Lainnya';}), ['Tabungan']);
   var cur=$('fk').value;
@@ -549,8 +575,8 @@ function fillSelects(){
 }
 function saveMe(){
   var v=$('me').value;
-  if(v==='__new'){ var n=prompt('Nama Anda (sama seperti di Telegram):'); if(n){ setLS('me',n.trim()); fillSelects(); } else fillSelects(); return; }
-  setLS('me',v);
+  if(v==='__new'){ var n=prompt('Nama Anda (sama seperti di Telegram):'); if(n){ setLS('me',n.trim()); setLS('meBaru',n.trim()); fillSelects(); } else fillSelects(); return; }
+  setLS('me',v); $('me').style.outline='';
 }
 function me(){ var v=getLS('me'); return v||'Web'; }
 
