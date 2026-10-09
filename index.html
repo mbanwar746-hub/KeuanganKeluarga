@@ -9,8 +9,8 @@
 <meta name="robots" content="noindex">
 <title>Keuangan Keluarga</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer onload="window.grafikSiap&&grafikSiap()"></script>
 <style>
 :root{
   --ink:#1E2A44; --ink2:#2C3B5E; --paper:#F4F6FA; --card:#fff; --line:#E2E7EF; --muted:#6B7690;
@@ -50,6 +50,7 @@ header.top{overflow:hidden;background:var(--ink);color:#fff;padding:18px 0 22px}
 .who select{background:#2C3B5E;border:1px solid #3A4B72;color:#fff;border-radius:8px;padding:6px 8px}
 .saldo{margin-top:22px}
 .saldo small{color:#AEB8D0;font-size:13px}
+.segar{color:#F2C14E;font-size:12px}
 .saldo .big{font-size:clamp(32px,7vw,46px);font-weight:800;letter-spacing:-.03em;line-height:1.1;margin-top:2px}
 .period{margin-top:20px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;min-width:0;max-width:100%}
@@ -213,7 +214,7 @@ nav.tabs button.on{color:var(--ink);background:var(--paper)}
 <script>
 /* ===== Penghubung ke server Apps Script (pengganti google.script.run) ===== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbxhCFSNzJx2c4y6JRQxF-8z2V3oKWAed7E05c6gyM5h6ERK2j8DeyloWjmZRqBJ8g2A/exec';
-var VERSI_HALAMAN = '2026-10-08c';
+var VERSI_HALAMAN = '2026-10-08d';
 /* Perbarui diri: bila GitHub sudah punya versi lebih baru dari yang tersimpan di HP, muat ulang versi baru */
 (function(){
   try {
@@ -226,6 +227,8 @@ var VERSI_HALAMAN = '2026-10-08c';
       }
     }).catch(function(){});
   } catch(e) {}
+  // Belum masuk: bangunkan server sekarang, supaya saat PIN selesai diketik server sudah siap
+  try { if (!localStorage.getItem('tok')) fetch(API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:'{"fn":"uji"}'}).catch(function(){}); } catch(e) {}
   document.addEventListener('DOMContentLoaded', function(){
     var box = document.querySelector('.login-box'); if (!box) return;
     var p = document.createElement('p');
@@ -235,7 +238,7 @@ var VERSI_HALAMAN = '2026-10-08c';
   });
 })();
 (function(){
-  var BACA = {meta:1, report:1, riwayatAset:1};
+  var BACA = {meta:1, report:1, awal:1, riwayatAset:1};
   function teks(h){ return String(h||'').replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/gi,' ').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); }
   function sebab(status, isi){
     var t = teks(isi);
@@ -305,7 +308,7 @@ var VERSI_HALAMAN = '2026-10-08c';
         </label>
       </div>
       <div class="saldo">
-        <small>Saldo saat ini</small>
+        <small>Saldo saat ini<span id="segar" class="segar" aria-live="polite"></span></small>
         <div class="big num" id="saldo">Rp0</div>
         <button class="nw" onclick="go('aset')">💎 Kekayaan bersih <b class="num" id="nwVal">Rp0</b> ›</button>
       </div>
@@ -499,13 +502,29 @@ function doLogin(){
   }).withFailureHandler(function(e){ load(false); $('loginErr').textContent=e.message; }).login(pin);
 }
 $('pin').addEventListener('keydown',function(e){ if(e.key==='Enter') doLogin(); });
-function logout(){ TOKEN=null; setSS('tok',null); $('app').classList.add('hidden'); $('login').classList.remove('hidden'); }
+function logout(){ TOKEN=null; setSS('tok',null); hapusData(); $('app').classList.add('hidden'); $('login').classList.remove('hidden'); }
 
 function start(){
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   setPeriod('bulan');
+  // Tampilkan dulu data terakhir yang tersimpan di HP (langsung muncul), lalu perbarui dari server
+  var c=bacaData();
+  if(c && c.start===P.start && c.end===P.end){
+    META=c.meta; REP=c.rep;
+    try{ fillSelects(); renderAll(); segar('memperbarui…'); }catch(e){ META=null; REP=null; }
+  }
   refresh(true);
 }
+
+/* ---------- Data terakhir di HP ---------- */
+var KUNCI_DATA='dataTerakhir';
+function simpanData(){
+  if(!META || !REP || P.mode!=='bulan' || P.start!==today().slice(0,7)+'-01') return;   // hanya beranda bulan ini
+  try{ localStorage.setItem(KUNCI_DATA, JSON.stringify({meta:META, rep:REP, start:P.start, end:P.end, waktu:Date.now()})); }catch(e){}
+}
+function bacaData(){ try{ var d=JSON.parse(localStorage.getItem(KUNCI_DATA)||'null'); return d&&d.meta&&d.rep?d:null; }catch(e){ return null; } }
+function hapusData(){ try{ localStorage.removeItem(KUNCI_DATA); }catch(e){} }
+function segar(t){ var el=$('segar'); if(el) el.textContent=t?' · '+t:''; }
 
 /* ---------- Period ---------- */
 function setPeriod(mode, ref){
@@ -546,14 +565,28 @@ function applyCustom(){
 }
 
 /* ---------- Data ---------- */
-function refresh(first){
-  return Promise.all([call('meta'), call('report',{start:P.start,end:P.end})]).then(function(r){
-    META=r[0]; REP=r[1];
-    if(first){ setPeriod('bulan'); }
-    fillSelects(); renderAll();
-  }).catch(fail);
+/* Beranda: pengaturan + laporan dalam satu permintaan ('awal'); server versi lama memakai dua permintaan */
+function ambilAwal(){
+  return call('awal',{start:P.start,end:P.end}).then(function(r){
+    if(r.token){ TOKEN=r.token; setSS('tok',TOKEN); }   // sesi diperpanjang server
+    return [r.meta, r.report];
+  }, function(e){
+    if(/Aksi tidak dikenal/i.test(e && e.message || '')) return Promise.all([call('meta'), call('report',{start:P.start,end:P.end})]);
+    throw e;
+  });
 }
-function loadReport(){ return call('report',{start:P.start,end:P.end}).then(function(r){ REP=r; renderAll(); }).catch(fail); }
+function refresh(first){
+  var kunci=P.mode+'|'+P.start+'|'+P.end;
+  return ambilAwal().then(function(r){
+    META=r[0];
+    // Bila periode diganti saat menunggu, laporan untuk periode baru sudah diminta tersendiri
+    if(P.mode+'|'+P.start+'|'+P.end===kunci){ REP=r[1]; if(first){ setPeriod('bulan'); } }
+    if(!REP) return;
+    fillSelects(); renderAll(); segar(''); simpanData();
+  }).catch(function(e){ if(REP) segar('belum diperbarui'); fail(e); });
+}
+function loadReport(){ return call('report',{start:P.start,end:P.end}).then(function(r){ REP=r; renderAll(); simpanData(); }).catch(fail); }
+function grafikSiap(){ if(REP){ try{ renderCharts(); renderAset(); }catch(e){} } }   // Chart.js selesai dimuat belakangan
 function reloadAll(){ return refresh(false); }
 
 function fillSelects(){
@@ -590,7 +623,8 @@ function renderAll(){
   $('sNet').className='v num '+(REP.selisih>=0?'c-in':'c-out');
   $('sAvg').textContent=REP.days>1?'Rata-rata keluar '+rp(REP.rataHarian)+'/hari':'';
   if(REP.keluarSebelumnya){ var ch=(REP.keluar-REP.keluarSebelumnya)/REP.keluarSebelumnya*100; $('sOutHint').textContent=(ch>0?'▲ ':'▼ ')+Math.abs(ch).toFixed(0)+'% dari periode lalu'; } else $('sOutHint').textContent='';
-  renderCharts(); renderHomeWallets(); renderRecent(); renderHomeSide(); renderTx(); renderDompet(); renderAset(); renderGoals(); renderBills();
+  if(window.Chart) renderCharts();
+  renderHomeWallets(); renderRecent(); renderHomeSide(); renderTx(); renderDompet(); renderAset(); renderGoals(); renderBills();
 }
 
 function renderCharts(){
