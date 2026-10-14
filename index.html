@@ -441,11 +441,30 @@ nav.tabs button.on .ico{color:var(--teal)}
 .f .katbaru input{width:auto;flex:1;min-width:0}
 .ag>.ico:last-child{color:var(--muted);align-self:center}
 @media(prefers-reduced-motion:reduce){.sheet{animation:none}.prog i{transition:none}.flash{animation:none;box-shadow:0 0 0 3px var(--save)}.loading{animation:none;width:100%}}
+
+/* Insight penasihat */
+.ins-h{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ins-h b{flex:1;min-width:0;font-size:15px}
+.ins-ic{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;flex:none;color:#FFFFFF;background:linear-gradient(135deg,var(--hero2),var(--teal))}
+.ins-st{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.ins-st.ok{background:var(--in-bg);color:var(--in)} .ins-st.warn{background:var(--save-bg);color:var(--save)} .ins-st.bad{background:var(--out-bg);color:var(--out)} .ins-st.mute{background:var(--surface2);color:var(--muted)}
+.ins-p{margin:0 0 12px;font-size:14px;line-height:1.5;font-weight:600}
+.ins-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.ins-l li{position:relative;padding-left:17px;font-size:13.5px;line-height:1.55;color:var(--fg)}
+.ins-l li::before{content:"";position:absolute;left:2px;top:.6em;width:7px;height:7px;border-radius:50%;background:var(--info)}
+.ins-l li.awas::before{background:var(--out)} .ins-l li.baik::before{background:var(--in)}
+.ins-a{display:flex;gap:10px;align-items:flex-start;margin-top:14px;padding:11px 12px;border-radius:12px;background:var(--surface2);font-size:13.5px;line-height:1.5;font-weight:600}
+.ins-a>.ico{color:var(--accent);flex:none;margin-top:2px}
+.ins-a small{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:2px}
+.ins-f{margin-top:10px;font-size:11.5px;color:var(--muted);line-height:1.4}
+.ins-sk{height:12px;border-radius:6px;margin:10px 0;background:linear-gradient(90deg,var(--surface2) 0%,var(--line) 50%,var(--surface2) 100%);background-size:200% 100%;animation:insk 1.2s linear infinite}
+@keyframes insk{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.ins-sk{animation:none}}
 </style>
 <script>
 /* ===== Penghubung ke server Apps Script (pengganti google.script.run) ===== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbxhCFSNzJx2c4y6JRQxF-8z2V3oKWAed7E05c6gyM5h6ERK2j8DeyloWjmZRqBJ8g2A/exec';
-var VERSI_HALAMAN = '2026-10-10';
+var VERSI_HALAMAN = '2026-10-14';
 /* Perbarui diri: bila GitHub sudah punya versi lebih baru dari yang tersimpan di HP, muat ulang versi baru */
 (function(){
   try {
@@ -599,6 +618,7 @@ var VERSI_HALAMAN = '2026-10-10';
         <div class="card stat"><div class="sh"><i class="bg-save"><svg class="ico s"><use href="#i-k-tabung"/></svg></i><small>Ditabung</small></div><div class="v num c-save" id="sSave">–</div></div>
         <div class="card stat"><div class="sh"><i class="bg-info"><svg class="ico s"><use href="#i-koreksi"/></svg></i><small>Selisih</small></div><div class="v num" id="sNet">–</div><div class="hint" id="sAvg"></div></div>
       </div>
+      <div class="card ins hidden" id="homeInsight" aria-live="polite"></div>
       <div class="card" id="homeBudget"></div>
       <div class="grid two">
         <div class="card"><h2>Arus kas</h2><div class="chartbox"><canvas id="chTrend"></canvas></div></div>
@@ -733,14 +753,14 @@ var busy=0;
 function load(on){ busy+=on?1:-1; $('loading').classList.toggle('hidden', busy<=0); }
 function toast(t){ var el=document.createElement('div'); el.className='toast'; el.textContent=t; el.setAttribute('role','status'); document.body.appendChild(el); setTimeout(function(){el.remove();},Math.max(2600,String(t).length*70)); }
 
-function call(action, payload){
+function call(action, payload, diam){   // diam=true: permintaan latar, tanpa ikon memuat
   return new Promise(function(res, rej){
-    load(true);
+    if(!diam) load(true);
     google.script.run.withSuccessHandler(function(r){
-      load(false);
+      if(!diam) load(false);
       if(r && r.error){ if(r.error==='AUTH'){ logout(); return rej(new Error('Sesi habis, silakan masuk lagi')); } return rej(new Error(r.error)); }
       res(r);
-    }).withFailureHandler(function(e){ load(false); rej(e); }).api(TOKEN, action, payload||{});
+    }).withFailureHandler(function(e){ if(!diam) load(false); rej(e); }).api(TOKEN, action, payload||{});
   });
 }
 function fail(e){ toast(String(e && e.message || e)); }
@@ -857,10 +877,39 @@ function refresh(first){
     // Bila periode diganti saat menunggu, laporan untuk periode baru sudah diminta tersendiri
     if(P.mode+'|'+P.start+'|'+P.end===kunci){ REP=r[1]; if(first){ setPeriod('bulan'); } }
     if(!REP) return;
-    fillSelects(); renderAll(); segar(''); simpanData();
+    fillSelects(); renderAll(); segar(''); simpanData(); loadInsight();
   }).catch(function(e){ if(REP) segar('belum diperbarui'); fail(e); });
 }
-function loadReport(){ return call('report',{start:P.start,end:P.end}).then(function(r){ REP=r; renderAll(); simpanData(); }).catch(fail); }
+function loadReport(){ tampilInsight(); loadInsight(); return call('report',{start:P.start,end:P.end}).then(function(r){ REP=r; renderAll(); simpanData(); }).catch(fail); }
+
+/* ---------- Insight penasihat (dimuat terpisah agar Beranda tetap cepat) ---------- */
+var INS=(function(){ try{ return JSON.parse(getLS('insight')||'{}')||{}; }catch(e){ return {}; } })(), INS_TUNGGU=null, INS_MATI=false, INS_T=null;
+function kunciIns(){ return P.start+'|'+P.end; }
+function loadInsight(){
+  if(INS_MATI) return;
+  clearTimeout(INS_T);
+  INS_T=setTimeout(function(){   // tunggu sebentar: periode bisa diganti beberapa kali berturut-turut
+    var k=kunciIns(); INS_TUNGGU=k; tampilInsight();
+    call('insight',{start:P.start,end:P.end},true).then(function(r){
+      INS[k]=r; var ks=Object.keys(INS); if(ks.length>8) delete INS[ks[0]]; setLS('insight',JSON.stringify(INS));
+    }).catch(function(e){ if(/tidak dikenal/i.test(e&&e.message||'')) INS_MATI=true; })   // server lama belum punya fitur ini
+    .then(function(){ if(INS_TUNGGU===k) INS_TUNGGU=null; tampilInsight(); });
+  },350);
+}
+function tutupRp(s){ s=esc(s); return SEMBUNYI?s.replace(/Rp\s?-?\d+(?:\.\d{3})*/g,'Rp ••••'):s; }
+function tampilInsight(){
+  var el=$('homeInsight'); if(!el) return;
+  var k=kunciIns(), h=INS[k];
+  if(!h&&INS_TUNGGU===k){ el.classList.remove('hidden'); el.innerHTML='<div class="ins-h"><span class="ins-ic">'+ic('ai','s')+'</span><b>Insight penasihat</b></div><div class="ins-sk"></div><div class="ins-sk" style="width:86%"></div><div class="ins-sk" style="width:64%"></div>'; return; }
+  if(!h||!h.poin||!h.poin.length||INS_MATI){ el.classList.add('hidden'); el.innerHTML=''; return; }
+  var st={sehat:['Sehat','ok'],perhatian:['Perlu perhatian','warn'],waspada:['Waspada','bad'],data:['Data belum cukup','mute']}[h.status]||['','mute'];
+  el.classList.remove('hidden');
+  el.innerHTML='<div class="ins-h"><span class="ins-ic">'+ic('ai','s')+'</span><b>Insight penasihat</b>'+(st[0]?'<span class="ins-st '+st[1]+'">'+st[0]+'</span>':'')+'</div>'+
+    '<p class="ins-p">'+tutupRp(h.penilaian)+'</p>'+
+    '<ul class="ins-l">'+h.poin.map(function(x){ return '<li class="'+(x.nada||'info')+'">'+tutupRp(x.teks)+'</li>'; }).join('')+'</ul>'+
+    (h.langkah?'<div class="ins-a">'+ic('kanan','s')+'<div><small>Langkah berikutnya</small>'+tutupRp(h.langkah)+'</div></div>':'')+
+    '<div class="ins-f">'+(h.sumber==='ai'?'Dirangkai AI dari angka catatan keluarga':'Dihitung dari catatan keluarga')+(INS_TUNGGU===k?' · memperbarui…':'')+'. Bukan pengganti perencana keuangan profesional.</div>';
+}
 function grafikSiap(){ if(REP){ try{ renderCharts(); renderAset(); }catch(e){} } }   // Chart.js selesai dimuat belakangan
 function reloadAll(){ return refresh(false); }
 
@@ -901,7 +950,7 @@ function renderAll(){
   if(REP.keluarSebelumnya){ var ch=(REP.keluar-REP.keluarSebelumnya)/REP.keluarSebelumnya*100; $('sOutHint').textContent=(ch>0?'▲ ':'▼ ')+Math.abs(ch).toFixed(0)+'% dari periode lalu'; } else $('sOutHint').textContent='';
   if(window.Chart) try{ renderCharts(); }catch(e){ console.warn(e); }   // grafik bermasalah tidak boleh menghentikan tampilan lain
   renderSpark(); renderHomeWallets(); renderBudget(); renderRecent(); renderHomeSide(); renderTx(); renderDompet(); renderAset(); renderGoals(); renderKal();
-  hitungNotif();
+  tampilInsight(); hitungNotif();
 }
 
 function renderCharts(){
